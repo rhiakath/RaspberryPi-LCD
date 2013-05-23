@@ -14,12 +14,12 @@ uint8_t CachedIODIRB = 0, CachedGPIOA = 0, CachedGPIOB = 0;
 // IOCON when Bank 1 active
 #define MCP23017_IOCON_BANK1 0x15
 
-// Pinos só quando o banco for 1
+// To use only after bank is 1
 #define MCP23017_GPIOA 0x09
 #define MCP23017_GPIOB 0x19
 #define MCP23017_IODIRB 0x10
 
-// Só para a inicialização
+// Offsets for init
 #define IODIRA_OFFSET 0
 #define IODIRB_OFFSET 1
 #define IPOLA_OFFSET 2
@@ -44,8 +44,9 @@ uint8_t CachedIODIRB = 0, CachedGPIOA = 0, CachedGPIOB = 0;
 #define OLATB_OFFSET 21
 
 /**
- * @brief Os pinos de dados do LCD D4-D7 estão mapeados aos pinos do MCP 12-9 ( PORTB4-1 ), nesta ordem. Como está invertido, um shift não funciona
- * Uso esta tabela para mapear valores de 4 bits para valores directos para a porta, com a inversão e o shift.
+ * @brief Small table to convert from one value to the equivalent to send to MCP23017
+ * The LCD data pins (D4-D7) connect to MCP pins 12-9 (PORTB4-1), in that order.  Because this sequence is 'reversed,' a direct shift
+ * won't work.  This table remaps 4-bit data values to MCP PORTB outputs, incorporating both the reverse and shift.
  **/
 uint8_t Flip[] = { 0b00000000, 0b00010000, 0b00001000, 0b00011000,
                    0b00000100, 0b00010100, 0b00001100, 0b00011100,
@@ -54,7 +55,8 @@ uint8_t Flip[] = { 0b00000000, 0b00010000, 0b00001000, 0b00011000,
                  };
 
 /**
- * @brief Para escrever no LCD, tem de se alternar dados com um strobe. Esta função aceita um byte, e mapeia para 4 já "flipados" e com os strobes.
+ * @brief Converts 1 byte to the correct buffer
+ * To write to the LCD, you must toggle a strobe. This function takes a byte, and inserts it into a 4 byte buffer with flipped values and strobes included
  *
  * @param In_Bitmask ...
  * @param In_Value ...
@@ -72,27 +74,17 @@ void Get4Bytes ( uint8_t In_Bitmask, uint8_t In_Value, uint8_t *Out_Result )
     Out_Result[3] = lo;
     }
 
+/**
+ * @brief Sends a command to the LCD
+ *
+ * @param In_Command ...
+ * @param In_Length ...
+ * @param In_IsText ...
+ * @return int
+ **/
 int LCD_SendData ( uint8_t *In_Command, uint8_t In_Length, uint8_t In_IsText )
     {
-    /*
-     * # If pin D7 is in input state, poll LCD busy flag until clear.
-        if self.ddrb & 0b00010000:
-            lo = (self.portb & 0b00000001) | 0b01000000
-            hi = lo | 0b00100000 # E=1 (strobe)
-            self.i2c.bus.write_byte_data(
-              self.i2c.address, self.MCP23017_GPIOB, lo)
-            while True:
-                # Strobe high (enable)
-                self.i2c.bus.write_byte(self.i2c.address, hi)
-                # First nybble contains busy state
-                bits = self.i2c.bus.read_byte(self.i2c.address)
-                # Strobe low, high, low.  Second nybble (A3) is ignored.
-                self.i2c.bus.write_i2c_block_data(
-                  self.i2c.address, self.MCP23017_GPIOB, [lo, hi, lo])
-                if (bits & 0b00000010) == 0: break # D7=0, not busy
-            self.portb = lo
-            */
-    // Enquanto D7 estiver em modo input, espera...
+    // While pin D7 is up, it means it's in input state. Since we want to write, we must poll until we can use it
     if ( CachedIODIRB & PIN_D7 )
         {
         uint8_t Low, High;
@@ -112,21 +104,10 @@ int LCD_SendData ( uint8_t *In_Command, uint8_t In_Length, uint8_t In_IsText )
             };
         CachedGPIOB = Low;
 
-        /*
-         *            # Polling complete, change D7 pin to output
-                    self.ddrb &= 0b11101111
-                    self.i2c.bus.write_byte_data(self.i2c.address,
-                      self.MCP23017_IODIRB, self.ddrb)
-        */
-        // Já está liberto, muda para output
+        // Ok, all set. Set pin to output
         CachedIODIRB &= 0b11101111;
         I2C_WriteByteToAddress ( I2CFD, MCP23017_IODIRB, CachedIODIRB );
         }
-
-    /*
-     *            bitmask = self.portb & 0b00000001   # Mask out PORTB LCD control bits
-            if char_mode: bitmask |= 0b10000000 # Set data bit if not a command
-    */
 
     uint8_t Bitmask = CachedGPIOB & 1;
     if ( In_IsText )
@@ -140,27 +121,19 @@ int LCD_SendData ( uint8_t *In_Command, uint8_t In_Length, uint8_t In_IsText )
         Get4Bytes ( Bitmask, In_Command[cont], TXBuffer + TXBufferUsed );
         TXBufferUsed+=4;
 
-        // Existe um limite de 32 bytes a serem enviados. Como tal, de 32 em 32 bytes, ou caso esteja já a terminar, despacho o que já tiver...
+        // There's a 32 byte limit to each command. So, every 32 bytes, we send what we've got so far
         if ( ( TXBufferUsed == 32 ) || ( cont == In_Length -1 ) )
             {
-            // Guarda estado do ultimo byte enviado na cache.
+            // Save last value in our cache
             CachedGPIOB = TXBuffer[TXBufferUsed-1];
 
-            // Escreve
+            // Writes it
             I2C_WriteBufferToAddress ( I2CFD, MCP23017_GPIOB, TXBuffer, TXBufferUsed );
             TXBufferUsed = 0;
             }
         }
 
-    /*
-    # If a poll-worthy instruction was issued, reconfigure D7
-    # pin as input to indicate need for polling on next call.
-    if (not char_mode) and (value in self.pollables):
-        self.ddrb |= 0b00010000
-        self.i2c.bus.write_byte_data(self.i2c.address,
-          self.MCP23017_IODIRB, self.ddrb)
-    */
-
+    // These two commands MUST have the D7 pin set as input afterwards. otherwise weird stuff happens ( you may try commenting this, and try to write some string, to see what happens )
     if ( ( In_IsText == 0 ) && ( ( In_Command[0] == LCD_CLEARDISPLAY ) || ( In_Command[0] == LCD_RETURNHOME ) ) )
         {
         CachedIODIRB |= 0b00010000;
@@ -174,12 +147,18 @@ int LCD_SendDataByte ( uint8_t In_Byte )
     return LCD_SendData ( &In_Byte, 1, 0 );
     }
 
-int LCD_Init ( void )
+/**
+ * @brief Initializes the ports to access the LCD
+ *
+ * @param In_Bus I2C bus on which to find the LCD
+ * @return int
+ **/
+int LCD_Init ( uint8_t In_Bus )
     {
-    I2CFD = I2C_Open ( 1 );
+    I2CFD = I2C_Open ( In_Bus );
     if ( I2CFD <= 0 )
         {
-        printf ( "%s - Unable to open i2c bus\n", __FUNCTION__ );
+        printf ( "%s - Unable to open i2c bus %d\n", __FUNCTION__, In_Bus );
         return -1;
         }
 
@@ -191,63 +170,31 @@ int LCD_Init ( void )
     CachedGPIOB = 0;
     CachedGPIOA = 0;
 
-    Registers[IODIRA_OFFSET] = 0b00111111; // Red + Green como são leds, são de output. O resto, como são botões, são inputs
-    Registers[IODIRB_OFFSET] = CachedIODIRB; // LCD D7 para saber o estado da linha, e o ultimo pino é o Blue, como tal é output
-    Registers[IPOLA_OFFSET] = 0b00111111; // Os botões vão ter polaridade inversa
-    Registers[IPOLB_OFFSET] = 0b00000000; // Aqui, tudo normal
-    Registers[GPINTENA_OFFSET] = 0b00000000; // Desligar interrupt-on-change em tudo
-    Registers[GPINTENB_OFFSET] = 0b00000000; // Idem
-    Registers[DEFVALA_OFFSET] = 0b00000000; // Desconheço
+    Registers[IODIRA_OFFSET] = 0b00111111; // Since Red + Green are leds, they're set as output ( 0 ). The rest is a left over pin and the buttons, so input ( 1 )
+    Registers[IODIRB_OFFSET] = CachedIODIRB; // Pin D7 enabled as line input, and the last pin is LCD background component Blue
+    Registers[IPOLA_OFFSET] = 0b00111111; // Set polarity for the inputs/outputs. The buttons have inverse polarity
+    Registers[IPOLB_OFFSET] = 0b00000000; //
+    Registers[GPINTENA_OFFSET] = 0b00000000; // Don't have any idea what this is...
+    Registers[GPINTENB_OFFSET] = 0b00000000; // ditto
+    Registers[DEFVALA_OFFSET] = 0b00000000; //
     Registers[DEFVALB_OFFSET] = 0b00000000; //
     Registers[INTCONA_OFFSET] = 0b00000000; //
     Registers[INTCONB_OFFSET] = 0b00000000; //
     Registers[IOCON1_OFFSET] = 0b00000000; //
     Registers[IOCON2_OFFSET] = 0b00000000; //
-    Registers[GPPUA_OFFSET] = 0b00111111; // Pull ups só para os botões
-    Registers[GPPUB_OFFSET] = 0b00000000; // Idem
-    Registers[INTFA_OFFSET] = 0b00000000;
-    Registers[INTFB_OFFSET] = 0b00000000;
-    Registers[INTCAPA_OFFSET] = 0b00000000;
-    Registers[INTCAPB_OFFSET] = 0b00000000;
-    Registers[GPIOA_OFFSET] = CachedGPIOA;
-    Registers[GPIOB_OFFSET] = CachedGPIOB;
-    Registers[OLATA_OFFSET] = 0b11000000; // Red + Green + 6xlixo
-    Registers[OLATB_OFFSET] = 0b00000001; // 7xlixo + Blue
+    Registers[GPPUA_OFFSET] = 0b00111111; // pull up on the buttons
+    Registers[GPPUB_OFFSET] = 0b00000000; //
+    Registers[INTFA_OFFSET] = 0b00000000; //
+    Registers[INTFB_OFFSET] = 0b00000000; //
+    Registers[INTCAPA_OFFSET] = 0b00000000; //
+    Registers[INTCAPB_OFFSET] = 0b00000000; //
+    Registers[GPIOA_OFFSET] = CachedGPIOA; //
+    Registers[GPIOB_OFFSET] = CachedGPIOB; //
+    Registers[OLATA_OFFSET] = 0b11000000; // Red + Green ( Initial values )
+    Registers[OLATB_OFFSET] = 0b00000001; // Blue ( initial values )
 
     I2C_WriteBufferToAddress ( I2CFD, 0, ( uint8_t * ) &Registers, sizeof ( Registers ) );
-
-
-    /*
-
-        # Switch to Bank 1 and disable sequential operation.
-        # From this point forward, the register addresses do NOT match
-        # the list immediately above.  Instead, use the constants defined
-        # at the start of the class.  Also, the address register will no
-        # longer increment automatically after this -- multi-byte
-        # operations must be broken down into single-byte calls.
-        self.i2c.bus.write_byte_data(
-          self.i2c.address, self.MCP23017_IOCON_BANK0, 0b10100000)
-
-        */
-
     I2C_WriteByteToAddress ( I2CFD, MCP23017_IOCON_BANK0, 0b10100000 );
-
-
-    /* self.displayshift   = (self.LCD_CURSORMOVE |
-                               self.LCD_MOVERIGHT)
-        self.displaymode    = (self.LCD_ENTRYLEFT |
-                               self.LCD_ENTRYSHIFTDECREMENT)
-        self.displaycontrol = (self.LCD_DISPLAYON |
-                               self.LCD_CURSOROFF |
-                               self.LCD_BLINKOFF)
-        self.write(0x33) # Init
-            self.write(0x32) # Init
-            self.write(0x28) # 2 line 5x8 matrix
-            self.write(self.LCD_CLEARDISPLAY)
-            self.write(self.LCD_CURSORSHIFT    | self.displayshift)
-            self.write(self.LCD_ENTRYMODESET   | self.displaymode)
-            self.write(self.LCD_DISPLAYCONTROL | self.displaycontrol)
-            self.write(self.LCD_RETURNHOME)*/
 
     LCD_SendDataByte ( 0x33 );
     LCD_SendDataByte ( 0x32 );
@@ -261,23 +208,12 @@ int LCD_Init ( void )
     return 0;
     }
 
-int ReadButtonState ( uint8_t *Out_State )
-    {
-    /*# Read state of single button
-    def buttonPressed(self, b):
-        return (self.i2c.readU8(self.MCP23017_GPIOA) >> b) & 1
-
-
-    # Read and return bitmask of combined button state
-    def buttons(self):
-        return self.i2c.readU8(self.MCP23017_GPIOA) & 0b11111
-    */
-
-    I2C_ReadByteFromAddress ( I2CFD, MCP23017_GPIOA, Out_State );
-    *Out_State &= 0b11111;
-    return 0;
-    }
-
+/**
+ * @brief Return the state for a specific button
+ *
+ * @param In_Button From the Enum
+ * @return int
+ **/
 int LCD_IsButtonPressed ( EExpanderInputPin In_Button )
     {
     uint8_t State;
@@ -286,6 +222,27 @@ int LCD_IsButtonPressed ( EExpanderInputPin In_Button )
     return ( ( State >> In_Button ) & 1 );
     }
 
+/**
+ * @brief Return the state of all the buttons
+ *
+ * @param Out_State The state mask. Must be ANDed with the correct enums
+ * @return int
+ **/
+int LCD_GetButtonPressState ( uint8_t *Out_State )
+    {
+    if ( I2C_ReadByteFromAddress ( I2CFD, MCP23017_GPIOA, Out_State ) != 0 )
+        return -1;
+    *Out_State &= 0b11111;
+    return 0;
+    }
+
+/**
+ * @brief Prints a message at the current position
+ *
+ * @param In_Message ...
+ * @param  ...
+ * @return int
+ **/
 int LCD_PrintMessage ( char *In_Message, ... )
     {
     char *Buffer;
@@ -299,22 +256,25 @@ int LCD_PrintMessage ( char *In_Message, ... )
     return Result;
     }
 
+/**
+ * @brief Changes the background color of the LCD
+ * The LCD allows for RGB specification of the background color ( 1 bit each ). Red and Green are bits 7 and 6 of GPIOA, while Blue is bit 0 of GPIOB.
+ * So we have to do some bit shifting and masking to get these values to the right place...
+ *
+ * @param In_Color ...
+ * @return int
+ **/
 int LCD_SetBackgroundColor ( ELCDBackgroundColor In_Color )
     {
-    /*          c          = ~color
-            self.porta = (self.porta & 0b00111111) | ((c & 0b011) << 6)
-            self.portb = (self.portb & 0b11111110) | ((c & 0b100) >> 2)
-            # Has to be done as two writes because sequential operation is off.
-            self.i2c.bus.write_byte_data(
-              self.i2c.address, self.MCP23017_GPIOA, self.porta)
-            self.i2c.bus.write_byte_data(
-              self.i2c.address, self.MCP23017_GPIOB, self.portb)
-    */
-
+    // Since the background color seems to be a pull-up, we turn a color component by setting it to 0. Here we invert the bits to reflect that.
     uint8_t TempColor = ~In_Color;
-    CachedGPIOA = (CachedGPIOA & 0b00111111) | (( TempColor & 0b011 ) << 6 );
-    CachedGPIOB = (CachedGPIOB & 0b11111110) | (( TempColor & 0b100 ) >> 2 );
-    I2C_WriteByteToAddress( I2CFD, MCP23017_GPIOA, CachedGPIOA);
-    I2C_WriteByteToAddress( I2CFD, MCP23017_GPIOB, CachedGPIOB);
-    return 0;
+    CachedGPIOA = ( CachedGPIOA & 0b00111111 ) | ( ( TempColor & 0b011 ) << 6 ); // Get the RED and GREEN bits in the appropriate place
+    CachedGPIOB = ( CachedGPIOB & 0b11111110 ) | ( ( TempColor & 0b100 ) >> 2 ); // Get the Blue bit in the appropriate place
+
+    // Since we had to disable address incrementing to the MCP23017, we have to write these two bytes in two calls.
+    int Result = I2C_WriteByteToAddress ( I2CFD, MCP23017_GPIOA, CachedGPIOA );
+    if ( Result != 0 )
+        return Result;
+    Result = I2C_WriteByteToAddress ( I2CFD, MCP23017_GPIOB, CachedGPIOB );
+    return Result;
     }

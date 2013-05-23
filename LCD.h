@@ -13,11 +13,11 @@ typedef enum
     LED_COLOR_OFF	= 0x00,
     LED_COLOR_RED	= 0x01,
     LED_COLOR_GREEN	= 0x02,
+    LED_COLOR_YELLOW	= LED_COLOR_RED + LED_COLOR_GREEN,
     LED_COLOR_BLUE	= 0x04,
-    LED_COLOR_YELLOW	= ( LED_COLOR_RED + LED_COLOR_GREEN ),
-    LED_COLOR_TEAL	= ( LED_COLOR_BLUE + LED_COLOR_GREEN ),
-    LED_COLOR_VIOLET	= ( LED_COLOR_RED + LED_COLOR_BLUE ),
-    LED_COLOR_WHITE	= ( LED_COLOR_RED + LED_COLOR_GREEN + LED_COLOR_BLUE ),
+    LED_COLOR_VIOLET	= LED_COLOR_BLUE + LED_COLOR_RED,
+    LED_COLOR_TEAL	= LED_COLOR_BLUE + LED_COLOR_GREEN,
+    LED_COLOR_WHITE	= LED_COLOR_BLUE + LED_COLOR_RED + LED_COLOR_GREEN,
     LED_COLOR_ON	= LED_COLOR_WHITE,
     } ELCDBackgroundColor;
 
@@ -72,9 +72,10 @@ typedef enum
     LCD_MOVELEFT    = 0x00,
     } EDisplayMoveCursorFlags;
 
-int LCD_Init ( void );
-int ReadButtonState ( uint8_t *Out_State );
+int LCD_SendDataByte ( uint8_t In_Byte );
+int LCD_Init ( uint8_t In_Bus );
 int LCD_IsButtonPressed ( EExpanderInputPin In_Button );
+int LCD_GetButtonPressState ( uint8_t *Out_State );
 int LCD_PrintMessage ( char *In_Message, ... );
 int LCD_SetBackgroundColor ( ELCDBackgroundColor In_Color );
 #endif
