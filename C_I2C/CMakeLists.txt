@@ -1,0 +1,10 @@
+cmake_minimum_required(VERSION 2.8)
+project ( C_I2C )
+
+if ( ATMEGA )
+message ( STATUS "Compiling I2C for ATMega" )
+add_library ( C_I2C I2C_ATMega.c I2CDevice.h )
+else ( ATMEGA )
+message ( STATUS "Compiling I2C for Linux" )
+add_library ( C_I2C I2CDevice.c I2CDevice.h )
+endif ( ATMEGA )

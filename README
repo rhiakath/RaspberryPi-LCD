@@ -1,8 +1,4 @@
-This is a very VERY initial stage for a lib to use the "Adafruit RGB Positive 16x2 LCD+Keypad Kit for Raspberry Pi" ( http://www.adafruit.com/products/1109 ).
-
-At this point it's basically a translation from the Adafruit example code in Python, so expect bugs, and not a whole lot of functions.
-
-Nevertheless, since this was the toughest part ( I don't know Python ), and it's working, I decided to share, since i didn't find any info on how to do it in C.
-
-Any comments, suggestions, bug reports, etc are welcome.
+This is a library to interface with "Adafruit RGB Positive 16x2 LCD+Keypad Kit for Raspberry Pi" ( http://www.adafruit.com/products/1109 ).
+I completely rewrote this, and it seems to be in an ok state. 
+Any bugs you find, please report them. Thank you
 
