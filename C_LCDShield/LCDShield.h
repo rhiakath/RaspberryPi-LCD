@@ -21,7 +21,7 @@ typedef enum
     LCD_DMC_MOVERIGHT   = 0x04,
     LCD_DMC_MOVELEFT    = 0x00,
     } EDisplayMoveCursorFlags;
-    
+
 typedef enum
     {
     // # LCD Commands
@@ -69,7 +69,7 @@ typedef enum
     UpPin     = 3,
     LeftPin   = 4
     } EButton;
-    
+
 typedef enum
     {
     Off,
